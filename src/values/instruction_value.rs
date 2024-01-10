@@ -3,11 +3,12 @@ use either::{
     Either::{Left, Right},
 };
 use llvm_sys::core::{
-    LLVMGetAlignment, LLVMGetFCmpPredicate, LLVMGetICmpPredicate, LLVMGetInstructionOpcode, LLVMGetInstructionParent,
-    LLVMGetMetadata, LLVMGetNextInstruction, LLVMGetNumOperands, LLVMGetOperand, LLVMGetOperandUse,
-    LLVMGetPreviousInstruction, LLVMGetVolatile, LLVMHasMetadata, LLVMInstructionClone, LLVMInstructionEraseFromParent,
-    LLVMInstructionRemoveFromParent, LLVMIsAAllocaInst, LLVMIsABasicBlock, LLVMIsALoadInst, LLVMIsAStoreInst,
-    LLVMIsTailCall, LLVMSetAlignment, LLVMSetMetadata, LLVMSetOperand, LLVMSetVolatile, LLVMValueAsBasicBlock,
+    LLVMGetAlignment, LLVMGetAllocatedType, LLVMGetFCmpPredicate, LLVMGetICmpPredicate, LLVMGetInstructionOpcode,
+    LLVMGetInstructionParent, LLVMGetMetadata, LLVMGetNextInstruction, LLVMGetNumOperands, LLVMGetOperand,
+    LLVMGetOperandUse, LLVMGetPreviousInstruction, LLVMGetVolatile, LLVMHasMetadata, LLVMInstructionClone,
+    LLVMInstructionEraseFromParent, LLVMInstructionRemoveFromParent, LLVMIsAAllocaInst, LLVMIsABasicBlock,
+    LLVMIsALoadInst, LLVMIsAStoreInst, LLVMIsATerminatorInst, LLVMIsConditional, LLVMIsTailCall, LLVMSetAlignment,
+    LLVMSetMetadata, LLVMSetOperand, LLVMSetVolatile, LLVMValueAsBasicBlock,
 };
 use llvm_sys::core::{LLVMGetOrdering, LLVMSetOrdering};
 #[llvm_versions(10.0..=latest)]
@@ -17,9 +18,9 @@ use llvm_sys::LLVMOpcode;
 
 use std::{ffi::CStr, fmt, fmt::Display};
 
-use crate::values::traits::AsValueRef;
 use crate::values::{BasicValue, BasicValueEnum, BasicValueUse, MetadataValue, Value};
 use crate::{basic_block::BasicBlock, types::AnyTypeEnum};
+use crate::{types::BasicTypeEnum, values::traits::AsValueRef};
 use crate::{AtomicOrdering, FloatPredicate, IntPredicate};
 
 use super::AnyValue;
@@ -222,6 +223,21 @@ impl<'ctx> InstructionValue<'ctx> {
         unsafe { BasicBlock::new(LLVMGetInstructionParent(self.as_value_ref())) }
     }
 
+    /// Returns if the instruction is a terminator
+    pub fn is_terminator(self) -> bool {
+        unsafe { !LLVMIsATerminatorInst(self.as_value_ref()).is_null() }
+    }
+
+    // SubTypes: Only apply to terminators
+    /// Returns if a terminator is conditional or not
+    pub fn is_conditional(self) -> bool {
+        if self.is_terminator() {
+            unsafe { LLVMIsConditional(self.as_value_ref()) == 1 }
+        } else {
+            false
+        }
+    }
+
     pub fn is_tail_call(self) -> bool {
         // LLVMIsTailCall has UB if the value is not an llvm::CallInst*.
         if self.get_opcode() == InstructionOpcode::Call {
@@ -280,6 +296,15 @@ impl<'ctx> InstructionValue<'ctx> {
         }
         unsafe { LLVMSetVolatile(self.as_value_ref(), volatile as i32) };
         Ok(())
+    }
+
+    // SubTypes: Only apply to alloca instruction
+    /// Returns the type that is allocated by the alloca instruction.
+    pub fn get_allocated_type(self) -> Result<BasicTypeEnum<'ctx>, &'static str> {
+        if !self.is_a_alloca_inst() {
+            return Err("Value is not an alloca.");
+        }
+        Ok(unsafe { BasicTypeEnum::new(LLVMGetAllocatedType(self.as_value_ref())) })
     }
 
     // SubTypes: Only apply to memory access and alloca instructions

@@ -1,5 +1,5 @@
 use inkwell::context::Context;
-use inkwell::types::AnyTypeEnum;
+use inkwell::types::{AnyTypeEnum, AsTypeRef, BasicType};
 use inkwell::values::{BasicValue, InstructionOpcode::*};
 use inkwell::{AddressSpace, AtomicOrdering, AtomicRMWBinOp, FloatPredicate, IntPredicate};
 
@@ -239,6 +239,7 @@ fn test_instructions() {
     let f32_val = f32_type.const_float(::std::f64::consts::PI);
 
     let store_instruction = builder.build_store(arg1, f32_val).unwrap();
+    let alloca_val = builder.build_alloca(i64_type, "alloca").unwrap();
     let ptr_val = builder.build_ptr_to_int(arg1, i64_type, "ptr_val").unwrap();
     let ptr = builder.build_int_to_ptr(ptr_val, f32_ptr_type, "ptr").unwrap();
     let icmp = builder.build_int_compare(IntPredicate::EQ, arg1, arg1, "icmp").unwrap();
@@ -248,7 +249,20 @@ fn test_instructions() {
         .unwrap();
     let free_instruction = builder.build_free(arg1).unwrap();
     let return_instruction = builder.build_return(None).unwrap();
+    let cond_br_instruction = builder
+        .build_conditional_branch(i64_type.const_zero(), basic_block, basic_block)
+        .unwrap();
 
+    assert_eq!(
+        alloca_val.as_instruction().unwrap().get_allocated_type(),
+        Ok(i64_type.as_basic_type_enum())
+    );
+    assert!(store_instruction.get_allocated_type().is_err());
+    assert!(!store_instruction.is_terminator());
+    assert!(return_instruction.is_terminator());
+    assert!(!store_instruction.is_conditional());
+    assert!(!return_instruction.is_conditional());
+    assert!(cond_br_instruction.is_conditional());
     assert_eq!(store_instruction.get_opcode(), Store);
     assert_eq!(ptr_val.as_instruction().unwrap().get_opcode(), PtrToInt);
     assert_eq!(ptr.as_instruction().unwrap().get_opcode(), IntToPtr);
